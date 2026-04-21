@@ -12,50 +12,42 @@ def initialize_particles(m, num_particles, xp):
 
     return xp.column_stack((x_coords, y_coords, thetas))
 
-# TODO vectorize this function
 def score_particles(particles, lidar, map_array, xp):
+    L_x = lidar[0] * PIXELS_PER_METER   # (N_lidar,)
+    L_y = lidar[1] * PIXELS_PER_METER
 
-    local_lidar_x = lidar[0]
-    local_lidar_y = lidar[1]
+    p_x     = particles[:, 0]           # (N_particles,)
+    p_y     = particles[:, 1]
+    p_theta = particles[:, 2]
 
-    scores = xp.zeros( len(particles) ) # initialize to zeros our scores for each particle
+    cos_t = xp.cos(p_theta)[:, None]    # (N_particles, 1)
+    sin_t = xp.sin(p_theta)[:, None]
 
-    # convert lidar distances to pixels
-    L_x = local_lidar_x * PIXELS_PER_METER 
-    L_y = local_lidar_y * PIXELS_PER_METER
+    # rotate each lidar point by each particle's angle, then translate — (N_particles, N_lidar)
+    g_x = L_x[None, :] * cos_t - L_y[None, :] * sin_t + p_x[:, None]
+    g_y = L_x[None, :] * sin_t + L_y[None, :] * cos_t + p_y[:, None]
 
-    # we basically want to iterate through all the particles
-    # the score depends on how much does our current reading matches the map
-    # to do this, we go and test on all particles,
-    # the more the points match, the higher score we have
-    
-    for i in range( len(particles) ):
-        p_x = particles[i, 0]
-        p_y = particles[i, 1]
-        p_theta = particles[i, 2]
+    pixel_x = xp.round(g_x).astype(int)
+    pixel_y = xp.round(g_y).astype(int)
 
-        score = 0
+    valid = (pixel_x >= 0) & (pixel_x < MAP_SIZE) & (pixel_y >= 0) & (pixel_y < MAP_SIZE)
 
-        for j in range( len(L_x) ):
+    px_clamped = xp.clip(pixel_x, 0, MAP_SIZE - 1)
+    py_clamped = xp.clip(pixel_y, 0, MAP_SIZE - 1)
 
-            # the actual lidar point
-            l_x = L_x[j]
-            l_y = L_y[j]
+    hits = map_array[py_clamped, px_clamped] == 1
 
-            # rotate the local point by the particle's angle
-            # then translate (add) the particle's global position
-            g_x = (l_x * xp.cos(p_theta)) - (l_y * xp.sin(p_theta)) + p_x
-            g_y = (l_x * xp.sin(p_theta)) + (l_y * xp.cos(p_theta)) + p_y
+    return xp.sum(hits & valid, axis=1)
 
-            # use int to get exact matrix indices
-            pixel_x = int(xp.round(g_x))
-            pixel_y = int(xp.round(g_y))
+def filter_particles(particles, scores, keep_fraction, xp):
+    num_to_keep = int( len(particles) * keep_fraction )
 
-            # are we inside the map dimensions
-            if 0 <= pixel_x < MAP_SIZE and 0 <= pixel_y < MAP_SIZE:
-                if map_array[pixel_y, pixel_x] == 1:
-                    score += 1
+    sorted_indices = xp.argsort(scores)[::-1]
 
-        scores[i] = score
+    best_indices = sorted_indices[:num_to_keep]
 
-    return scores
+    best_particles = particles[best_indices]
+
+    # best_scores = scores[best_indices]
+
+    return best_particles

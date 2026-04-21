@@ -133,8 +133,10 @@ if __name__ == "__main__":
                     continue
 
                 scores = pf.score_particles(particles, data, MAP, xp)
+                
+                bp = pf.filter_particles(particles, scores, 0.99, xp)
 
-                print( scores )
+                particles = bp
 
             except Exception as e:
                 print( e ) 
