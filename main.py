@@ -160,12 +160,13 @@ if __name__ == "__main__":
                 # base x_vel and theta_vel is calculated from the mujoco kinematics
                 dv = delta_movement(status.base.x_vel, status.base.theta_vel, dt)
 
-                # convert to pixel's ratio
-                dvp = dv * map.PIXELS_PER_METER
+                # convert to pixel's ratio (but not theta)
+                dvp_x = dv[0] * map.PIXELS_PER_METER 
+                dvp_theta = dv[1]
 
-                bp[:, 0] += dvp[0] * xp.cos( bp[:, 2] )
-                bp[:, 1] += dvp[0] * xp.sin( bp[:, 2] )
-                bp[:, 2] += dvp[1]
+                bp[:, 0] += dvp_x * xp.cos( bp[:, 2] )
+                bp[:, 1] += dvp_x * xp.sin( bp[:, 2] )
+                bp[:, 2] += dvp_theta
 
                 ## resmaple particles from past ones ##
                 indices = xp.random.choice(len(bp), size=NUM_PARTICLES, replace=True)
