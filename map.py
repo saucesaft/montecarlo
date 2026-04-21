@@ -7,6 +7,7 @@ UPPER_BOUND = 5
 def load(filepath):
     img = Image.open(filepath).convert('L')
     arr = np.array(img)
+    arr = arr[::-1, :] # flip because coordinate system is reversed
     return (arr < 128).astype(int)
 
 _data = load("map.png")

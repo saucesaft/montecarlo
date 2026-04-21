@@ -105,6 +105,12 @@ def plot_map_particles(particles: xp.ndarray):
     plt.pause(0.001)
     plt.cla()
 
+def delta_movement(x_vel, theta_vel, dt):
+    delta_x     = x_vel * dt 
+    delta_theta = theta_vel * dt
+
+    return np.array([delta_x, delta_theta])
+
 if __name__ == "__main__":
     cameras_to_use = StretchCameras.none()
 
@@ -117,29 +123,63 @@ if __name__ == "__main__":
     try:
         sim.set_base_velocity(v_linear=5.0, omega=30)
 
-        target = 1.1  # m
+        target = 1.1
+        
+        dt = time.perf_counter()
+        prev_time = 0
+
         while sim.is_running():
             status = sim.pull_status()
             sensor_data = sim.pull_sensor_data()
 
             try:
+                # calculate dt
+                current_time = time.perf_counter()
+                dt = current_time - prev_time
+                prev_time = current_time
+
                 # simulate 2D lidar
                 data = laser_scan( scan_data=sensor_data.get_data(StretchSensors.base_lidar), particles=particles )
                 
                 # plot lidar with matplotlib
                 plot_map_particles( particles )
                 
-                if data is None: # TODO visualize LiDAR as well
+                # TODO visualize LiDAR at (0,0)
+                # TODO visualize LiDAR at most probable particle
+                # TODO visualize dt
+
+                if data is None:
                     continue
 
+                ## compute scores for each particles using sums with the map ##
                 scores = pf.score_particles(particles, data, MAP, xp)
                 
-                bp = pf.filter_particles(particles, scores, 0.99, xp)
+                ## keep 20% percent of top best particles that match ##
+                bp = pf.filter_particles(particles, scores, 0.20, xp)
 
-                particles = bp
+                # base x_vel and theta_vel is calculated from the mujoco kinematics
+                dv = delta_movement(status.base.x_vel, status.base.theta_vel, dt)
+
+                # convert to pixel's ratio
+                dvp = dv * map.PIXELS_PER_METER
+
+                bp[:, 0] += dvp[0] * xp.cos( bp[:, 2] )
+                bp[:, 1] += dvp[0] * xp.sin( bp[:, 2] )
+                bp[:, 2] += dvp[1]
+
+                ## resmaple particles from past ones ##
+                indices = xp.random.choice(len(bp), size=NUM_PARTICLES, replace=True)
+
+                particles = bp[indices]
+
+                ## add jitter ##
+                # if we don't add this, resampling leads to duplicate high-score particles which collapse to a single dot
+                particles[:, 0] += xp.random.normal(0, 1.5, size=NUM_PARTICLES)   # pixels
+                particles[:, 1] += xp.random.normal(0, 1.5, size=NUM_PARTICLES)
+                particles[:, 2] += xp.random.normal(0, 0.05, size=NUM_PARTICLES)  # radians
 
             except Exception as e:
-                print( e ) 
+                print( e )
 
             current_position = status.base.x
 
