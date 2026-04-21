@@ -7,6 +7,7 @@ from stretch_mujoco.enums.stretch_sensors import StretchSensors
 from stretch_mujoco.stretch_mujoco_simulator import StretchMujocoSimulator
 
 import map
+import particles as pf
 
 import argparse
 
@@ -24,26 +25,11 @@ try:
     plt.ion()
 except: ...
 
-MAP = map.load( "map.png" )
-MAP_SIZE = MAP.shape[0]
+MAP = xp.asarray(map._data)
+MAP_SIZE = map.MAP_SIZE
+PIXELS_PER_METER = map.PIXELS_PER_METER
 
 NUM_PARTICLES = 1000
-PARTICLES = xp.zeros((NUM_PARTICLES, 3))
-
-### particle filter
-def initialize_particles(m, num_particles):
-    free_y, free_x = xp.where(m == 0)
-    
-    random_indices = xp.random.choice(len(free_x), size=num_particles, replace=True)
-    
-    x_coords = free_x[random_indices] + xp.random.uniform(0, 1, size=num_particles)
-    y_coords = free_y[random_indices] + xp.random.uniform(0, 1, size=num_particles)
-    
-    thetas = xp.random.uniform(0, 2 * xp.pi, size=num_particles)
-    
-    particles = xp.column_stack((x_coords, y_coords, thetas))
-    
-    return particles
 
 ### kinematics ###
 def forward_kinematics(w_l, w_r, r, L):
@@ -72,11 +58,8 @@ def laser_scan(scan_data: np.ndarray, particles: xp.ndarray):
     # convert simulator numpy data to current backend (xp)
     scan_data = xp.asarray(scan_data)
     
-    lower_bound = 0.2
-    upper_bound = 5
-
-    mask_lower = scan_data >= lower_bound
-    mask_upper = scan_data <= upper_bound
+    mask_lower = scan_data >= map.LOWER_BOUND
+    mask_upper = scan_data <= map.UPPER_BOUND
 
     filtered_distance = scan_data[mask_lower & mask_upper]
 
@@ -91,13 +74,9 @@ def laser_scan(scan_data: np.ndarray, particles: xp.ndarray):
     x = filtered_distance * xp.cos(degrees_filtered) * -1
     y = filtered_distance * xp.sin(degrees_filtered) * -1
 
-    # determinar la resolucion
-    # - el diametro son 10 metros (upper bound)
-    pixels_per_meter = (MAP_SIZE / (upper_bound * 2)) 
-
     grid_center = MAP_SIZE // 2
-    grid_x = xp.round(x * pixels_per_meter).astype(int) + grid_center
-    grid_y = xp.round(y * pixels_per_meter).astype(int) + grid_center
+    grid_x = xp.round(x * PIXELS_PER_METER).astype(int) + grid_center
+    grid_y = xp.round(y * PIXELS_PER_METER).astype(int) + grid_center
 
     valid_mask = (grid_x >= 0) & (grid_x < MAP_SIZE) & (grid_y >= 0) & (grid_y < MAP_SIZE)
     valid_x = grid_x[valid_mask]
@@ -133,7 +112,7 @@ if __name__ == "__main__":
 
     sim.start(headless=False)
 
-    particles = initialize_particles( MAP, NUM_PARTICLES )
+    particles = pf.initialize_particles(MAP, NUM_PARTICLES, xp)
 
     try:
         sim.set_base_velocity(v_linear=5.0, omega=30)
@@ -144,9 +123,18 @@ if __name__ == "__main__":
             sensor_data = sim.pull_sensor_data()
 
             try:
+                # simulate 2D lidar
                 data = laser_scan( scan_data=sensor_data.get_data(StretchSensors.base_lidar), particles=particles )
                 
+                # plot lidar with matplotlib
                 plot_map_particles( particles )
+                
+                if data is None: # TODO visualize LiDAR as well
+                    continue
+
+                scores = pf.score_particles(particles, data, MAP, xp)
+
+                print( scores )
 
             except Exception as e:
                 print( e ) 
