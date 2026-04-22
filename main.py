@@ -71,8 +71,8 @@ def laser_scan(scan_data: np.ndarray, particles: xp.ndarray):
 
     degrees_filtered = degrees[mask_lower & mask_upper]
 
-    x = filtered_distance * xp.cos(degrees_filtered) * -1
-    y = filtered_distance * xp.sin(degrees_filtered) * -1
+    x = filtered_distance * xp.cos(degrees_filtered)
+    y = filtered_distance * xp.sin(degrees_filtered)
 
     grid_center = MAP_SIZE // 2
     grid_x = xp.round(x * PIXELS_PER_METER).astype(int) + grid_center
