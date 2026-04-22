@@ -24,8 +24,9 @@ def score_particles(particles, lidar, map_array, xp):
     sin_t = xp.sin(p_theta)[:, None]
 
     # rotate each lidar point by each particle's angle, then translate — (N_particles, N_lidar)
-    g_x = L_x[None, :] * cos_t - L_y[None, :] * sin_t + p_x[:, None]
-    g_y = L_x[None, :] * sin_t + L_y[None, :] * cos_t + p_y[:, None]
+    # CW rotation to match pixel-space theta convention (y increases downward in array)
+    g_x = L_x[None, :] * cos_t + L_y[None, :] * sin_t + p_x[:, None]
+    g_y = -L_x[None, :] * sin_t + L_y[None, :] * cos_t + p_y[:, None]
 
     pixel_x = xp.round(g_x).astype(int)
     pixel_y = xp.round(g_y).astype(int)
@@ -39,15 +40,14 @@ def score_particles(particles, lidar, map_array, xp):
 
     return xp.sum(hits & valid, axis=1)
 
-def filter_particles(particles, scores, keep_fraction, xp):
-    num_to_keep = int( len(particles) * keep_fraction )
+def resample_particles(particles, scores, num_particles, xp):
+    weights = scores.astype(float)
+    total = weights.sum()
 
-    sorted_indices = xp.argsort(scores)[::-1]
+    if total == 0:
+        weights = xp.ones(len(particles)) / len(particles)
+    else:
+        weights = weights / total
 
-    best_indices = sorted_indices[:num_to_keep]
-
-    best_particles = particles[best_indices]
-
-    # best_scores = scores[best_indices]
-
-    return best_particles
+    indices = xp.random.choice(len(particles), size=num_particles, replace=True, p=weights)
+    return particles[indices]

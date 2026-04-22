@@ -29,7 +29,7 @@ MAP = xp.asarray(map._data)
 MAP_SIZE = map.MAP_SIZE
 PIXELS_PER_METER = map.PIXELS_PER_METER
 
-NUM_PARTICLES = 1000
+NUM_PARTICLES = 4000
 
 ### kinematics ###
 def forward_kinematics(w_l, w_r, r, L):
@@ -54,7 +54,7 @@ def inverse_kinematics(v, omega, r, L):
     return mat @ body_speed
 
 
-def laser_scan(scan_data: np.ndarray, particles: xp.ndarray):
+def laser_scan(scan_data: xp.ndarray, particles: xp.ndarray):
     # convert simulator numpy data to current backend (xp)
     scan_data = xp.asarray(scan_data)
     
@@ -70,9 +70,9 @@ def laser_scan(scan_data: np.ndarray, particles: xp.ndarray):
     degrees = xp.radians(degrees)
 
     degrees_filtered = degrees[mask_lower & mask_upper]
-
+    
     x = filtered_distance * xp.cos(degrees_filtered)
-    y = filtered_distance * xp.sin(degrees_filtered)
+    y = filtered_distance * xp.sin(degrees_filtered + xp.pi)
 
     grid_center = MAP_SIZE // 2
     grid_x = xp.round(x * PIXELS_PER_METER).astype(int) + grid_center
@@ -89,7 +89,7 @@ def plot_map_particles(particles: xp.ndarray):
     plot_map = MAP.get() if args.gpu else MAP
     plot_particles = particles.get() if args.gpu else particles
 
-    plt.imshow(plot_map, cmap='binary', origin='lower')
+    plt.imshow(plot_map, cmap='binary', origin='upper')
 
     p_x = plot_particles[:, 0]
     p_y = plot_particles[:, 1]
@@ -109,7 +109,7 @@ def delta_movement(x_vel, theta_vel, dt):
     delta_x     = x_vel * dt 
     delta_theta = theta_vel * dt
 
-    return np.array([delta_x, delta_theta])
+    return xp.array([delta_x, delta_theta])
 
 if __name__ == "__main__":
     cameras_to_use = StretchCameras.none()
@@ -125,8 +125,7 @@ if __name__ == "__main__":
 
         target = 1.1
         
-        dt = time.perf_counter()
-        prev_time = 0
+        prev_time = time.perf_counter()
 
         while sim.is_running():
             status = sim.pull_status()
@@ -151,27 +150,17 @@ if __name__ == "__main__":
                 if data is None:
                     continue
 
-                ## compute scores for each particles using sums with the map ##
-                scores = pf.score_particles(particles, data, MAP, xp)
-                
-                ## keep 20% percent of top best particles that match ##
-                bp = pf.filter_particles(particles, scores, 0.20, xp)
-
-                # base x_vel and theta_vel is calculated from the mujoco kinematics
+                # predict: move particles forward before scoring
                 dv = delta_movement(status.base.x_vel, status.base.theta_vel, dt)
+                dvp_x = dv[0] * map.PIXELS_PER_METER
 
-                # convert to pixel's ratio (but not theta)
-                dvp_x = dv[0] * map.PIXELS_PER_METER 
-                dvp_theta = dv[1]
+                particles[:, 0] += dvp_x * xp.cos( particles[:, 2] )
+                particles[:, 1] += dvp_x * xp.sin( particles[:, 2] )
+                particles[:, 2] += dv[1]
 
-                bp[:, 0] += dvp_x * xp.cos( bp[:, 2] )
-                bp[:, 1] += dvp_x * xp.sin( bp[:, 2] )
-                bp[:, 2] += dvp_theta
-
-                ## resmaple particles from past ones ##
-                indices = xp.random.choice(len(bp), size=NUM_PARTICLES, replace=True)
-
-                particles = bp[indices]
+                ## update: score then resample ##
+                scores = pf.score_particles(particles, data, MAP, xp)
+                particles = pf.resample_particles(particles, scores, NUM_PARTICLES, xp)
 
                 ## add jitter ##
                 # if we don't add this, resampling leads to duplicate high-score particles which collapse to a single dot

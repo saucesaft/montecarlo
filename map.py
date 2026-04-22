@@ -2,12 +2,12 @@ from PIL import Image
 import numpy as np
 
 LOWER_BOUND = 0.2
-UPPER_BOUND = 5
+UPPER_BOUND = 10
 
 def load(filepath):
     img = Image.open(filepath).convert('L')
     arr = np.array(img)
-    return (arr < 128).astype(int)[:, ::-1]
+    return (arr < 128).astype(int)
 
 _data = load("map.png")
 MAP_SIZE = _data.shape[0]
