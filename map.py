@@ -12,7 +12,10 @@ def load(filepath):
 
 _data = load("map.png")
 MAP_SIZE = _data.shape[0]
-PIXELS_PER_METER = MAP_SIZE / (UPPER_BOUND * 2)
+
+# PIXELS_PER_METER = MAP_SIZE / (UPPER_BOUND * 2)
+# 56 pixels wide of the table in the map / 1.2m wide from the MuJoCo XML
+PIXELS_PER_METER = 56 / 1.2
 
 if __name__ == "__main__":
     with np.printoptions(threshold=np.inf):
