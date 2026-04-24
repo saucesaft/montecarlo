@@ -29,7 +29,7 @@ MAP = xp.asarray(map._data)
 MAP_SIZE = map.MAP_SIZE
 PIXELS_PER_METER = map.PIXELS_PER_METER
 
-NUM_PARTICLES = 4000
+NUM_PARTICLES = 1024
 
 ### kinematics ###
 def forward_kinematics(w_l, w_r, r, L):
@@ -121,28 +121,42 @@ if __name__ == "__main__":
     particles = pf.initialize_particles(MAP, NUM_PARTICLES, xp)
 
     try:
-        sim.set_base_velocity(v_linear=5.0, omega=30)
+        # each waypoint: (x_target, v_linear, omega) — varied curvatures break map symmetry
+        waypoints = [
+            ( 1.2,  5.0,  15),
+            (-0.4,  5.0,  45),
+            ( 1.0,  5.0,  55),
+            (-1.1,  5.0, -20),
+            ( 0.3,  5.0,  40),
+            (-0.9, -5.0, -60),
+        ]
+        wp_idx = 0
+        sim.set_base_velocity(v_linear=waypoints[0][1], omega=waypoints[0][2])
 
-        target = 1.1
-        
-        prev_time = time.perf_counter()
+        LOOP_HZ = 20
+        LOOP_DT = 1.0 / LOOP_HZ
 
         while sim.is_running():
+            loop_start = time.perf_counter()
+
             status = sim.pull_status()
             sensor_data = sim.pull_sensor_data()
 
+            x_target, v, omega = waypoints[wp_idx]
+            if (v > 0 and status.base.x >= x_target) or (v < 0 and status.base.x <= x_target):
+                wp_idx = (wp_idx + 1) % len(waypoints)
+                _, v, omega = waypoints[wp_idx]
+                sim.set_base_velocity(v_linear=v, omega=omega)
+
             try:
-                # calculate dt
-                current_time = time.perf_counter()
-                dt = current_time - prev_time
-                prev_time = current_time
+                dt = LOOP_DT
 
                 # simulate 2D lidar
                 data = laser_scan( scan_data=sensor_data.get_data(StretchSensors.base_lidar), particles=particles )
-                
+
                 # plot lidar with matplotlib
                 plot_map_particles( particles )
-                
+
                 # TODO visualize LiDAR at (0,0)
                 # TODO visualize LiDAR at most probable particle
                 # TODO visualize dt
@@ -171,14 +185,8 @@ if __name__ == "__main__":
             except Exception as e:
                 print( e )
 
-            current_position = status.base.x
-
-            if target > 0 and current_position > target:
-                target *= -1
-                sim.set_base_velocity(v_linear=-5.0, omega=-30)
-            elif target < 0 and current_position < target:
-                target *= -1
-                sim.set_base_velocity(v_linear=5.0, omega=30)
+            elapsed = time.perf_counter() - loop_start
+            time.sleep(max(0, LOOP_DT - elapsed))
 
     except KeyboardInterrupt:
         sim.stop()

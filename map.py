@@ -2,7 +2,7 @@ from PIL import Image
 import numpy as np
 
 LOWER_BOUND = 0.2
-UPPER_BOUND = 10
+UPPER_BOUND = 5
 
 def load(filepath):
     img = Image.open(filepath).convert('L')
